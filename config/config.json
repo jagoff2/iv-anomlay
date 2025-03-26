@@ -1,0 +1,33 @@
+{
+  "kafka": {
+    "bootstrap_servers": "redpanda:9092",
+    "group_id": "options_anomaly_detection",
+    "input_topic": "options_data",
+    "output_topic": "options_anomalies",
+    "consumer_poll_timeout": 1.0
+  },
+  "anomaly_detection": {
+    "iv_surface": {
+      "enabled": true,
+      "threshold_stddev": 2,
+      "rolling_window": 120,
+      "min_samples": 10
+    },
+    "isolation_forest": {
+      "enabled": true,
+      "contamination": 0.02,
+      "n_estimators": 100,
+      "max_samples": "auto",
+      "random_state": 42,
+      "model_update_interval": 30
+    }
+  },
+  "dashboard": {
+    "update_interval": 5,
+    "api_port": 8000
+  },
+  "general": {
+    "debug": false,
+    "num_workers": 4
+  }
+}

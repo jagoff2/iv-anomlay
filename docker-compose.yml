@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # Redpanda - High-performance Kafka-compatible streaming platform
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: options-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=redpanda:8082
+      - --kafka-addr=0.0.0.0:9092
+      - --advertise-kafka-addr=redpanda:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports:
+      - "9092:9092"  # Kafka API
+      - "8081:8081"  # Schema Registry
+      - "8082:8082"  # HTTP Proxy
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    networks:
+      - options-net
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redpanda Console - Web UI for Redpanda
+# Fixed Redpanda Console configuration
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: options-redpanda-console
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+      - REDPANDA_ADMIN_API_URLS=http://redpanda:9644
+    networks:
+      - options-net
+    depends_on:
+      - redpanda
+
+  # YFinance Data Feed Service
+  yfinance-data-feed:
+    build:
+      context: .
+      dockerfile: docker/yfinance.Dockerfile
+    #image: options-anomaly-detection/yfinance-feed
+    container_name: yfinance-data-feed
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+    command: python3 yfinance_data_feed.py --config config/yfinance_config.json
+    restart: unless-stopped
+    networks:
+      - options-net  # Make sure this matches the network used by redpanda    
+    depends_on:
+      - redpanda
+
+  # Options Data Simulator - Generates mock options data
+  #options-simulator:
+   # build:
+    #  context: .
+     # dockerfile: docker/simulator.Dockerfile
+    #container_name: options-simulator
+    #command: >
+     # python options_simulator.py 
+      #  --kafka_server redpanda:9092 
+       # --topic options_data 
+        #--rate 20 
+        #--anomaly_rate 0.05
+    #networks:
+     # - options-net
+    #depends_on:
+     # - redpanda
+    #restart: on-failure
+
+  # Anomaly Detection Service - Core anomaly detection engine
+  anomaly-detection:
+    build:
+      context: .
+      dockerfile: docker/anomaly-detection.Dockerfile
+    container_name: options-anomaly-detection
+    command: >
+      python anomaly_detection.py
+        --config /app/config/config.json
+    volumes:
+      - ./config:/app/config
+    ports:
+      - "8000:8000"  # API port
+    networks:
+      - options-net
+    depends_on:
+      - redpanda
+    restart: on-failure
+
+  # Dashboard - Visualizes anomalies and system metrics
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    container_name: options-dashboard
+    ports:
+      - "8050:8050"  # Dash port
+    environment:
+      - ANOMALY_API_URL=http://anomaly-detection:8000
+    networks:
+      - options-net
+    depends_on:
+      - anomaly-detection
+    restart: on-failure
+
+volumes:
+  redpanda-data:
+    driver: local
+
+networks:
+  options-net:
+    driver: bridge
+
+
+
